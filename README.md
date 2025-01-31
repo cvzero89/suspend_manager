@@ -1,7 +1,13 @@
-# suspend_manager
+# suspend_manager A.K.A Super Sniffer
+
+## Description
 Using pyshark to measure net usage to suspend a server.
 
-Example:
+## Usage:
+- Clone this repo.
+- Use a virtualenv(optional) and install all modules in requirements.txt
+
+````python3 super_sniffer.py`````
 
 ````listening on eno1
 Tue Apr  5 18:57:04 2022 source: x.x.x.x:5353 IP to: x.x.x.x UDP size: 110
@@ -15,3 +21,6 @@ There are no known services running. We can suspend now.
 rtcwake: wakeup from "mem" using /dev/rtc0 at Wed Apr  6 07:00:00 2022
 ````
 If there are any services that currently run on the server you can specify the IP to have the script re-run the packet capture 3 times to make sure the network is not in use.
+
+## Config:
+Configuration can be modified with config.yaml changing the logging, services to check, PyShark packet lenght and suspend command.

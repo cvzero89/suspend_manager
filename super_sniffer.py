@@ -1,105 +1,143 @@
 import psutil
-
-processName = 'ssh'
-## My laptop automatically connects, I might be creating backups or needing info, if so I do not want the server to suspend:
-def ssh_check(processName): 
-	for proc in psutil.process_iter():
-		try:
-			if processName.lower() in proc.name().lower():
-				return True
-		except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-				pass
-	return False
-
-check_ssh = ssh_check(processName)
-
-if check_ssh == True:
-	print('SSH is running, will not suspend.')
-	exit()
-else:
-	print('SSH is not running, will check network usage.')
-
 import pyshark
 import time
-
-# define interface
-networkInterface = "eth0"
-
-# define capture object
-capture = pyshark.LiveCapture(interface=networkInterface)
-
-print(f'listening on {networkInterface}')
-
-captured_packet_list = []
-captured_ips_list = []
-
-def super_sniffer():
-
-	for packet in capture.sniff_continuously(packet_count=1000):
-	    # adjusted output
-	    try:
-	        # get timestamp
-	        localtime = time.asctime(time.localtime(time.time()))
-
-	        # get packet content
-	        protocol = packet.transport_layer   # protocol type
-	        src_addr = packet.ip.src            # source address
-	        src_port = packet[protocol].srcport   # source port
-	        dst_addr = packet.ip.dst            # destination address
-	        dst_port = packet[protocol].dstport   # destination port
-	        ip_port_src = f'{packet.ip.src}:{src_port}'
-	        ip_port_dst = f'{packet.ip.dst}:{dst_port}'
-	        packet_size = int(packet.captured_length)
-	        if packet_size >= 67:
-		        captured_packet_list.append(packet_size)
-		        captured_ips_list.append(ip_port_src)
-		        captured_ips_list.append(ip_port_dst)
-		        # output packet info
-		        print (f'{localtime} source: {src_addr}:{src_port} IP to: {dst_addr} {protocol} size: {packet_size}')
-	    except AttributeError as e:
-	        # ignore packets other than TCP, UDP and IPv4
-	        pass
-	the_sum = sum(captured_packet_list)
-	the_number_of_elements = len(captured_packet_list)
-	average_packet_size = the_sum / the_number_of_elements		        
-
-	return average_packet_size, captured_ips_list
-
-average_packet_size, captured_ips_list = super_sniffer()
-
-## Re-running packet capture if known services are running (?)
-## Known (possibly) running services:
-service_1 = 'x.x.x.x'
-service_2 = 'x.x.x.x'
-service_3 = 'x.x.x.x'
-service_4 = 'x.x.x.x'
-known_services = [service_1, service_2, service_3, service_4]
-
-idle_score = 0
-
-if average_packet_size >= 700:
-	print(f'{networkInterface} is in use. Average packet size is: {average_packet_size}.')
-	exit()
-else:
-	print(f'{networkInterface} is idle. Average packet size is: {average_packet_size}.')
-	if any(elem in known_services for elem in captured_ips_list):
-		print('Found known services. Sniffer will run again:')
-		while idle_score < 3:
-			time.sleep(300)
-			average_packet_size, captured_ips_list = super_sniffer()
-			if average_packet_size <= 700:
-				idle_score += 1
-				print(f'Sniffer has run {idle_score} times, still no activity. Average packet size is: {average_packet_size}.')
-			elif average_packet_size >= 700:
-				print(f'Sniffer ran {idle_score} times, found activity on the network. Not suspending today.')
-				idle_score = 5
-        exit()
-	else:
-		print('There are no known services running. We can suspend now.')
-
-
 import subprocess
+import yaml
+import logging
+from logging.handlers import RotatingFileHandler
 
-command_to_sleep_wake = "/usr/sbin/rtcwake -m disk -l -t $(date +%s -d 'tomorrow 07:00')"
+def load_config(config_path="config.yaml"):
+    try:
+        with open(config_path, "r") as file:
+            return yaml.safe_load(file)
+    except Exception as e:
+        logging.error(f"Failed to load configuration file: {e}")
+        exit(1)
 
-subprocess.Popen([command_to_sleep_wake], shell=True)
+def setup_logging(log_file, log_level, max_log_size, backup_count):
+    numeric_level = getattr(logging, log_level.upper(), logging.INFO)
+
+    handler = RotatingFileHandler(log_file, maxBytes=max_log_size, backupCount=backup_count)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+
+    logging.basicConfig(
+        level=numeric_level,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[handler, logging.StreamHandler()]
+    )
+
+def log_system_info():
+    cpu_usage = psutil.cpu_percent(interval=1)
+    memory_info = psutil.virtual_memory()
+    disk_usage = psutil.disk_usage('/')
+    net_io = psutil.net_io_counters()
+
+    logging.info(f"System Stats Before Suspension:")
+    logging.info(f"  - CPU Usage: {cpu_usage}%")
+    logging.info(f"  - Memory Usage: {memory_info.percent}% ({memory_info.used / (1024**3):.2f} GB used)")
+    logging.info(f"  - Disk Usage: {disk_usage.percent}% ({disk_usage.used / (1024**3):.2f} GB used)")
+    logging.info(f"  - Network Sent: {net_io.bytes_sent / (1024**2):.2f} MB, Received: {net_io.bytes_recv / (1024**2):.2f} MB")
+
+def ssh_check(process_name):
+    for proc in psutil.process_iter(['name']):
+        try:
+            if process_name.lower() in proc.info['name'].lower():
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+    return False
+
+def super_sniffer(network_interface, packet_count):
+    capture = pyshark.LiveCapture(interface=network_interface)
+    captured_packet_list = []
+    captured_ips_list = []
+
+    try:
+        for packet in capture.sniff_continuously(packet_count=packet_count):
+            try:
+                protocol = packet.transport_layer
+                src_addr = packet.ip.src
+                src_port = packet[protocol].srcport
+                dst_addr = packet.ip.dst
+                dst_port = packet[protocol].dstport
+                packet_size = int(packet.captured_length)
+
+                if packet_size >= 67:
+                    captured_packet_list.append(packet_size)
+                    captured_ips_list.extend([f"{src_addr}:{src_port}", f"{dst_addr}:{dst_port}"])
+                    logging.info(f"Packet: {src_addr}:{src_port} -> {dst_addr}:{dst_port} | {protocol} | Size: {packet_size}")
+            except AttributeError:
+                pass  
+
+        if captured_packet_list:
+            average_packet_size = sum(captured_packet_list) / len(captured_packet_list)
+        else:
+            average_packet_size = 0  
+
+    except Exception as e:
+        logging.error(f"Error during packet capture: {e}")
+        average_packet_size, captured_ips_list = 0, []
+
+    return average_packet_size, captured_ips_list
+
+def sizer(network_interface, average_packet_size, known_services, captured_ips_list, idle_threshold, idle_checks, idle_wait_seconds, packet_count):
+    if average_packet_size >= idle_threshold:
+        logging.info(f"{network_interface} is active. Average packet size: {average_packet_size}. Not suspending.")
+        return False
+
+    logging.info(f"{network_interface} is idle. Average packet size: {average_packet_size}.")
+
+    if any(ip in known_services for ip in captured_ips_list):
+        logging.info("Known services detected. Monitoring for more idle periods.")
+        idle_score = 0
+
+        while idle_score < idle_checks:
+            time.sleep(idle_wait_seconds)
+            average_packet_size, captured_ips_list = super_sniffer(network_interface, packet_count)
+
+            if average_packet_size <= idle_threshold:
+                idle_score += 1
+                logging.info(f"Idle count: {idle_score}. Average packet size: {average_packet_size}.")
+            else:
+                logging.info("Network activity resumed. No suspension.")
+                return False
+
+    logging.info("No known services active. Preparing to suspend.")
+    return True
+
+def main():
+    config = load_config()
+    setup_logging(config["logging"]["log_file"], config["logging"]["log_level"], config["logging"]["max_log_size"], config["logging"]["backup_count"])
+
+    network_interface = config["network"]["interface"]
+    known_services = config["network"]["known_services"]
+    process_name = config["processes"]["ssh_check"]
+
+    packet_count = config["sniffer"]["packet_count"]
+    idle_threshold = config["sniffer"]["idle_threshold"]
+    idle_checks = config["sniffer"]["idle_checks"]
+    idle_wait_seconds = config["sniffer"]["idle_wait_seconds"]
+
+    wake_time = config["suspend"]["wake_time"]
+    suspend_command = config["suspend"]["suspend_command"]
+
+    logging.info("Starting network monitoring script.")
+
+    if ssh_check(process_name):
+        logging.info("SSH is running, will not suspend.")
+        return
+
+    logging.info("SSH is not running. Checking network usage.")
+    
+    average_packet_size, captured_ips_list = super_sniffer(network_interface, packet_count)
+    
+    if sizer(network_interface, average_packet_size, known_services, captured_ips_list, idle_threshold, idle_checks, idle_wait_seconds):
+        log_system_info()
+        try:
+            subprocess.run(suspend_command, shell=True, check=True)
+            logging.info(f"System is suspending until {wake_time}.")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Failed to execute suspension command: {e}")
+
+if __name__ == '__main__':
+    main()

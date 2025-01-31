@@ -1,0 +1,24 @@
+logging:
+  log_file: "network_monitor.log"
+  log_level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  max_log_size: 5242880  # 5MB in bytes
+  backup_count: 5  # Keep last 5 log files
+
+network:
+  interface: "eth0"
+  known_services:
+    - "1.1.1.1:80"
+    - "8.8.8.8:53"
+
+processes:
+  ssh_check: "ssh"
+
+sniffer:
+  packet_count: 500
+  idle_threshold: 700
+  idle_checks: 3
+  idle_wait_seconds: 300
+
+suspend:
+  wake_time: "07:00"
+  suspend_command: "/usr/sbin/rtcwake -m disk -l -t $(date +%s -d 'tomorrow 07:00')"
