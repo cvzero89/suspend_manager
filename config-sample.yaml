@@ -21,4 +21,4 @@ sniffer:
 
 suspend:
   wake_time: "07:00"
-  suspend_command: "/usr/sbin/rtcwake -m disk -l -t $(date +%s -d 'tomorrow 07:00')"
+  mode: "disk"

@@ -1,7 +1,8 @@
-import psutil
-import pyshark
+import os
 import time
 import subprocess
+import psutil
+import pyshark
 import yaml
 import logging
 from logging.handlers import RotatingFileHandler
@@ -16,8 +17,8 @@ def load_config(config_path="config.yaml"):
 
 def setup_logging(log_file, log_level, max_log_size, backup_count):
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
-
-    handler = RotatingFileHandler(log_file, maxBytes=max_log_size, backupCount=backup_count)
+    log_file_location = f'{os.path.abspath(os.path.dirname(__file__))}/{log_file}'
+    handler = RotatingFileHandler(log_file_location, maxBytes=max_log_size, backupCount=backup_count)
     handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
     logging.basicConfig(
@@ -109,17 +110,18 @@ def main():
     config = load_config()
     setup_logging(config["logging"]["log_file"], config["logging"]["log_level"], config["logging"]["max_log_size"], config["logging"]["backup_count"])
 
-    network_interface = config["network"]["interface"]
-    known_services = config["network"]["known_services"]
-    process_name = config["processes"]["ssh_check"]
+    network_interface = config["network"].get("interface", "eth0")
+    known_services = config["network"].get("known_services", [])
+    process_name = config["processes"].get("ssh_check", "ssh")
 
-    packet_count = config["sniffer"]["packet_count"]
-    idle_threshold = config["sniffer"]["idle_threshold"]
-    idle_checks = config["sniffer"]["idle_checks"]
-    idle_wait_seconds = config["sniffer"]["idle_wait_seconds"]
+    packet_count = config["sniffer"].get("packet_count", 500)
+    idle_threshold = config["sniffer"].get("idle_threshold", 700)
+    idle_checks = config["sniffer"].get("idle_checks", 3)
+    idle_wait_seconds = config["sniffer"].get("idle_wait_seconds", 300)
 
-    wake_time = config["suspend"]["wake_time"]
-    suspend_command = config["suspend"]["suspend_command"]
+    wake_time = config["suspend"].get("wake_time", "07:00")
+    mode = config["suspend"].get("mode", "disk")
+    suspend_command = f"/usr/sbin/rtcwake -m {mode} -l --date {wake_time}"
 
     logging.info("Starting network monitoring script.")
 

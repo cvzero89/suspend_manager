@@ -7,9 +7,12 @@ Using pyshark to measure net usage to suspend a server.
 - Clone this repo.
 - Use a virtualenv(optional) and install all modules in requirements.txt
 
-````python3 super_sniffer.py`````
+````
+python3 super_sniffer.py
+`````
 
-````listening on eno1
+````
+Listening on eno1
 Tue Apr  5 18:57:04 2022 source: x.x.x.x:5353 IP to: x.x.x.x UDP size: 110
 Tue Apr  5 18:57:04 2022 source: x.x.x.x:50589 IP to: x.x.x.x TCP size: 74
 Tue Apr  5 18:57:04 2022 source: x.x.x.x:52143 IP to: x.x.x.x TCP size: 74
