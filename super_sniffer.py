@@ -7,7 +7,7 @@ import yaml
 import logging
 from logging.handlers import RotatingFileHandler
 
-def load_config(config_path="config.yaml"):
+def load_config(config_path=f"{os.path.abspath(os.path.dirname(__file__))}/config.yaml"):
     try:
         with open(config_path, "r") as file:
             return yaml.safe_load(file)
