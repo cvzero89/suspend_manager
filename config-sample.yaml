@@ -10,8 +10,15 @@ network:
     - "1.1.1.1:80"
     - "8.8.8.8:53"
 
-processes:
-  ssh_check: "ssh"
+processes_check:
+  enabled: False
+  processes:
+    ssh:
+      name: "ssh"
+      user: "user"
+    docker:
+      name: "dockerd"
+      user: "root"
 
 sniffer:
   packet_count: 500
@@ -20,5 +27,6 @@ sniffer:
   idle_wait_seconds: 300
 
 suspend:
+  time_or_date: "--date"
   wake_time: "07:00"
-  mode: "disk"
+  mode: "mem"

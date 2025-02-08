@@ -39,13 +39,24 @@ def log_system_info():
     logging.info(f"  - Disk Usage: {disk_usage.percent}% ({disk_usage.used / (1024**3):.2f} GB used)")
     logging.info(f"  - Network Sent: {net_io.bytes_sent / (1024**2):.2f} MB, Received: {net_io.bytes_recv / (1024**2):.2f} MB")
 
-def ssh_check(process_name):
-    for proc in psutil.process_iter(['name']):
+def process_check(process_name, process_user):
+    for proc in psutil.process_iter(['pid', 'name', 'username']):  
         try:
-            if process_name.lower() in proc.info['name'].lower():
+            if not psutil.pid_exists(proc.pid):  
+                continue
+
+            proc_info = proc.as_dict(attrs=['name', 'username'], ad_value=None)  
+
+            proc_name = proc_info.get('name', "").lower()
+            proc_user = proc_info.get('username', "").lower() 
+
+            if proc_name == process_name.lower() and proc_user == process_user.lower():
+                logging.info(f"Found process '{process_name}' running under user '{process_user}' (PID: {proc.pid})")
                 return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            pass
+
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
+            logging.warning(f"Could not access process {proc.pid}: {e}")
+
     return False
 
 def super_sniffer(network_interface, packet_count):
@@ -112,7 +123,7 @@ def main():
 
     network_interface = config["network"].get("interface", "eth0")
     known_services = config["network"].get("known_services", [])
-    process_name = config["processes"].get("ssh_check", "ssh")
+    processes_check = config["processes_check"].get("enabled", False)
 
     packet_count = config["sniffer"].get("packet_count", 500)
     idle_threshold = config["sniffer"].get("idle_threshold", 700)
@@ -120,20 +131,26 @@ def main():
     idle_wait_seconds = config["sniffer"].get("idle_wait_seconds", 300)
 
     wake_time = config["suspend"].get("wake_time", "07:00")
-    mode = config["suspend"].get("mode", "disk")
-    suspend_command = f"/usr/sbin/rtcwake -m {mode} -l --date {wake_time}"
+    mode = config["suspend"].get("mode", "mem")
+    time_or_date = config["suspend"].get("time_or_date", "--date")
+    suspend_command = f"/usr/sbin/rtcwake -m {mode} -l {time_or_date} {wake_time}"
 
     logging.info("Starting network monitoring script.")
 
-    if ssh_check(process_name):
-        logging.info("SSH is running, will not suspend.")
-        return
+    if processes_check is True:
+        processes_name = config["processes_check"].get("processes", [])
+        for key in processes_name.keys():
+            process_name = config["processes_check"]["processes"][key]["name"]
+            process_user = config["processes_check"]["processes"][key]["user"]
+            if process_check(process_name, process_user):
+                logging.info(f'{process_name} is running, will not suspend.')
+                exit(1)
 
-    logging.info("SSH is not running. Checking network usage.")
-    
+    logging.info("Specified processes are not running. Checking network usage.")
+
     average_packet_size, captured_ips_list = super_sniffer(network_interface, packet_count)
-    
-    if sizer(network_interface, average_packet_size, known_services, captured_ips_list, idle_threshold, idle_checks, idle_wait_seconds):
+
+    if sizer(network_interface, average_packet_size, known_services, captured_ips_list, idle_threshold, idle_checks, idle_wait_seconds, packet_count):
         log_system_info()
         try:
             subprocess.run(suspend_command, shell=True, check=True)

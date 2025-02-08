@@ -6,6 +6,8 @@ Using pyshark to measure net usage to suspend a server.
 ## Usage:
 - Clone this repo.
 - Use a virtualenv(optional) and install all modules in requirements.txt
+- Install Wireshark and Tshark
+- The user running the script must be allowed to use Wireshark and rtcwake
 
 ````
 python3 super_sniffer.py
